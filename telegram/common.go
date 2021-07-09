@@ -6,22 +6,23 @@
 package telegram
 
 import (
-	"reflect"
-	"runtime"
 	"github.com/pkg/errors"
 	"github.com/xelaj/errs"
 	dry "github.com/xelaj/go-dry"
+	"reflect"
+	"runtime"
 
 	"github.com/xelaj/mtproto"
 	"github.com/xelaj/mtproto/internal/keys"
-	"strings"
 	"strconv"
+	"strings"
 )
 
 type Client struct {
 	*mtproto.MTProto
 	config       *ClientConfig
 	serverConfig *Config
+	initConnectionParams *InitConnectionParams
 }
 
 type ClientConfig struct {
@@ -34,6 +35,7 @@ type ClientConfig struct {
 	AppID           int
 	AppHash         string
 	InitWarnChannel bool
+	ProxyUrl string
 }
 
 const (
@@ -72,6 +74,7 @@ func NewClient(c ClientConfig) (*Client, error) { //nolint: gocritic arg is not 
 		AuthKeyFile: c.SessionFile,
 		ServerHost:  c.ServerHost,
 		PublicKey:   publicKeys[0],
+		ProxyUrl: c.ProxyUrl,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "setup common MTProto client")
@@ -92,8 +95,7 @@ func NewClient(c ClientConfig) (*Client, error) { //nolint: gocritic arg is not 
 	}
 
 	//client.AddCustomServerRequestHandler(client.handleSpecialRequests())
-
-	resp, err := client.InvokeWithLayer(ApiVersion, &InitConnectionParams{
+	client.initConnectionParams = &InitConnectionParams{
 		ApiID:          int32(c.AppID),
 		DeviceModel:    c.DeviceModel,
 		SystemVersion:  c.SystemVersion,
@@ -101,7 +103,8 @@ func NewClient(c ClientConfig) (*Client, error) { //nolint: gocritic arg is not 
 		SystemLangCode: "en", // can't be edited, cause docs says that a single possible parameter
 		LangCode:       "en",
 		Query:          &HelpGetConfigParams{},
-	})
+	}
+	resp, err := client.InvokeWithLayer(ApiVersion, client.initConnectionParams)
 
 	if err != nil {
 		return nil, errors.Wrap(err, "getting server configs")
@@ -124,11 +127,26 @@ func NewClient(c ClientConfig) (*Client, error) { //nolint: gocritic arg is not 
 			continue
 		}
 		dcList[int(dc.ID)] = dc.IpAddress + ":" + strconv.Itoa(int(dc.Port))
-		//dcList[int(dc.ID)] = "149.154.167.50:443"
 	}
 
 	client.SetDCList(dcList)
 	return client, nil
+}
+func (m *Client) RefreshServerConfig() error {
+	//如果服务器地址重定向,则更新配置
+	resp, err := m.InvokeWithLayer(ApiVersion, m.initConnectionParams)
+
+	if err != nil {
+		return  errors.Wrap(err, "getting server configs")
+	}
+
+	config, ok := resp.(*Config)
+	if !ok {
+		return  errors.New("got wrong response: " + reflect.TypeOf(resp).String())
+	}
+
+	m.serverConfig = config
+	return nil
 }
 
 func (m *Client) IsSessionRegistred() (bool, error) {

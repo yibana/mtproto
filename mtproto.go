@@ -8,6 +8,7 @@ package mtproto
 import (
 	"context"
 	"crypto/rsa"
+	"fmt"
 	"io"
 	"reflect"
 	"sync"
@@ -28,6 +29,7 @@ import (
 
 type MTProto struct {
 	addr         string
+	ProxyUrl 	 string
 	transport    transport.Transport
 	stopRoutines context.CancelFunc // stopping ping, read, etc. routines
 	routineswg   sync.WaitGroup     // WaitGroup for being sure that all routines are stopped
@@ -89,22 +91,7 @@ type Config struct {
 
 	ServerHost string
 	PublicKey  *rsa.PublicKey
-}
-
-func (m *MTProto) ReCreate() (*MTProto) {
-	m2 := &MTProto{
-		tokensStorage:         m.tokensStorage,
-		addr:                  m.addr,
-		encrypted:             false, // if not nil, then it's already encrypted, otherwise makes no sense
-		sessionId:             utils.GenerateSessionID(),
-		serviceChannel:        make(chan tl.Object),
-		publicKey:             m.publicKey,
-		responseChannels:      utils.NewSyncIntObjectChan(),
-		expectedTypes:         utils.NewSyncIntReflectTypes(),
-		serverRequestHandlers: make([]customHandlerFunc, 0),
-		dclist:                defaultDCList(),
-	}
-	return m2
+	ProxyUrl string
 }
 
 func NewMTProto(c Config) (*MTProto, error) {
@@ -134,6 +121,7 @@ func NewMTProto(c Config) (*MTProto, error) {
 		expectedTypes:         utils.NewSyncIntReflectTypes(),
 		serverRequestHandlers: make([]customHandlerFunc, 0),
 		dclist:                defaultDCList(),
+		ProxyUrl: c.ProxyUrl,
 	}
 
 	if s != nil {
@@ -187,6 +175,7 @@ func (m *MTProto) connect(ctx context.Context) error {
 			Ctx:     ctx,
 			Host:    m.addr,
 			Timeout: defaultTimeout,
+			ProxyUrl: m.ProxyUrl,
 		},
 		mode.Intermediate,
 	)
@@ -241,7 +230,7 @@ func (m *MTProto) Reconnect() error {
 	if err != nil {
 		return errors.Wrap(err, "disconnecting")
 	}
-
+	m.routineswg.Wait()
 	err = m.CreateConnection()
 	return errors.Wrap(err, "recreating connection")
 }
@@ -259,6 +248,7 @@ func (m *MTProto) startPinging(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
+				fmt.Println("startPinging is exit!")
 				return
 			case <-ticker.C:
 				_, err := m.ping(0xCADACADA) //nolint:gomnd not magic
@@ -278,6 +268,7 @@ func (m *MTProto) startReadingResponses(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
+				fmt.Println("startReadingResponses is exit!")
 				return
 			default:
 				err := m.readMsg()
@@ -436,25 +427,25 @@ func (m *MTProto) tryToProcessErr(e *ErrResponseCode) error {
 			return errors.Wrapf(e, "DC with id %v not found", e.AdditionalInfo)
 		}
 
-
-		m.addr = newIP
-		m.SaveSession()
-		return errors.Wrapf(e,"PHONE_MIGRATE_X_NewIP is %s",newIP)
-
 		err := m.Disconnect()
 		if err != nil {
 			return errors.Wrap(err, "disconnecting")
 		}
-		//m.routineswg.Wait()
-		//m.encrypted = false
-		//m.seqNo = 0
-		//m.serviceModeActivated = false
-
-		*m = *m.ReCreate()
+		m.routineswg.Wait()
+		m.addr = newIP
+		m.encrypted = false
+		m.sessionId = utils.GenerateSessionID()
+		m.serviceChannel = make(chan tl.Object)
+		m.serviceModeActivated = false
+		m.responseChannels = utils.NewSyncIntObjectChan()
+		m.expectedTypes = utils.NewSyncIntReflectTypes()
+		m.seqNo = 0
 
 		err = m.CreateConnection()
-		return errors.Wrap(err, "recreating connection")
-
+		if err != nil {
+			return errors.Wrap(err, "recreating connection")
+		}
+		return errors.New("PHONE_MIGRATE_X_NewIP") // 返回一个重定向错误
 	default:
 		return e
 	}

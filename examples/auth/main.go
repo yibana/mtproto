@@ -17,6 +17,9 @@ import (
 	utils "github.com/xelaj/mtproto/examples/example_utils"
 )
 
+const AppID = 4995960
+const AppHash = "ca928547b9035ac7a4219a4441883f64"
+
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("second argument must be phone number!")
@@ -26,7 +29,7 @@ func main() {
 
 	// helper variables
 	appStorage := utils.PrepareAppStorageForExamples()
-	sessionFile := filepath.Join(appStorage, "session.json")
+	sessionFile := filepath.Join(appStorage, fmt.Sprintf("%s_Session.json",strings.ReplaceAll(phoneNumber,"+","")))
 	publicKeys := filepath.Join(appStorage, "tg_public_keys.pem")
 
 	// edit these params for you!
@@ -37,9 +40,10 @@ func main() {
 		ServerHost: "149.154.167.50:443",
 		// public keys file is path to file with public keys, which you must get from https://my.telelgram.org
 		PublicKeysFile:  publicKeys,
-		AppID:           94575,                              // app id, could be find at https://my.telegram.org
-		AppHash:         "a3406de8d171bb422bb6ddf3bbd800e2", // app hash, could be find at https://my.telegram.org
+		AppID:           AppID,                              // app id, could be find at https://my.telegram.org
+		AppHash:         AppHash, // app hash, could be find at https://my.telegram.org
 		InitWarnChannel: true,                               // if we want to get errors, otherwise, client.Warnings will be set nil
+		ProxyUrl: "socks5://127.0.0.1:7890",
 	})
 	dry.PanicIfErr(err)
 	client.Warnings = make(chan error) // required to initialize, if we want to get errors
@@ -57,8 +61,21 @@ func main() {
 	}
 
 	setCode, err := client.AuthSendCode(
-		phoneNumber, 94575, "a3406de8d171bb422bb6ddf3bbd800e2", &telegram.CodeSettings{},
+		phoneNumber, AppID, AppHash, &telegram.CodeSettings{},
 	)
+
+	if err != nil {
+		if strings.Contains(err.Error(),"PHONE_MIGRATE_X_NewIP"){
+			// 重定向错误,更新客户端配置
+			err = client.RefreshServerConfig()
+			if err != nil {
+				panic(err)
+			}
+			setCode, err = client.AuthSendCode(
+				phoneNumber, AppID, AppHash, &telegram.CodeSettings{},
+			)
+		}
+	}
 
 	// this part shows how to deal with errors (if you want of course. No one
 	// like errors, but the can be return sometimes)
@@ -100,7 +117,13 @@ func main() {
 	)
 	if err == nil {
 		pp.Println(auth)
-
+		auth2, _ := client.AuthSignUp(
+			phoneNumber,
+			setCode.PhoneCodeHash,
+			"张",
+			"小生",
+		)
+		pp.Println(auth2)
 		fmt.Println("Success! You've signed in!")
 		return
 	}

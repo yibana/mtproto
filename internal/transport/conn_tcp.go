@@ -22,27 +22,37 @@ type TCPConnConfig struct {
 	Ctx     context.Context
 	Host    string
 	Timeout time.Duration
+	ProxyUrl string
 }
 
 func NewTCP(cfg TCPConnConfig) (Conn, error) {
-	//tcpAddr, err := net.ResolveTCPAddr("tcp", cfg.Host)
-	//if err != nil {
-	//	return nil, errors.Wrap(err, "resolving tcp")
-	//}
+
 	d := net.Dialer{
 		Timeout:   15 * time.Second,
 		KeepAlive: 15 * time.Second,
+		Cancel: cfg.Ctx.Done(),
 	}
-	u,err:=url.Parse("socks5://127.0.0.1:7890")
-	if err!=nil {
-		return nil, err
+	var conn net.Conn
+	var err error
+	if len(cfg.ProxyUrl)>0{
+		u,err:=url.Parse(cfg.ProxyUrl)
+		if err!=nil {
+			return nil, err
+		}
+		dialer, err :=proxy.FromURL(u,&d)
+		if err!=nil {
+			return nil, err
+		}
+		conn, err =dialer.Dial("tcp",cfg.Host)
+	} else {
+		tcpAddr, err := net.ResolveTCPAddr("tcp", cfg.Host)
+		if err != nil {
+			return nil, errors.Wrap(err, "resolving tcp")
+		}
+		conn, err = net.DialTCP("tcp", nil, tcpAddr)
 	}
-	dialer, err :=proxy.FromURL(u,&d)
-	if err!=nil {
-		return nil, err
-	}
-	conn, err :=dialer.Dial("tcp",cfg.Host)
-	//conn, err := net.DialTCP("tcp", nil, tcpAddr)
+
+	//
 	if err != nil {
 		return nil, errors.Wrap(err, "dialing tcp")
 	}
