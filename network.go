@@ -8,7 +8,6 @@ package mtproto
 import (
 	"reflect"
 	"strconv"
-
 	"github.com/pkg/errors"
 	"github.com/xelaj/errs"
 
@@ -28,7 +27,7 @@ func (m *MTProto) sendPacket(request tl.Object, expectedTypes ...reflect.Type) (
 		data  messages.Common
 		msgID = utils.GenerateMessageId()
 	)
-
+	m.msgId = msgID
 	// adding types for parser if required
 	if len(expectedTypes) > 0 {
 		m.expectedTypes.Add(int(msgID), expectedTypes)
@@ -71,7 +70,6 @@ func (m *MTProto) sendPacket(request tl.Object, expectedTypes ...reflect.Type) (
 		// messages with a smaller one.
 		m.seqNo += 2
 	}
-
 	return resp, nil
 }
 

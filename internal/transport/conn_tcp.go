@@ -8,6 +8,8 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/xelaj/go-dry/ioutil"
+	"golang.org/x/net/proxy"
+	"net/url"
 )
 
 type tcpConn struct {
@@ -23,18 +25,31 @@ type TCPConnConfig struct {
 }
 
 func NewTCP(cfg TCPConnConfig) (Conn, error) {
-	tcpAddr, err := net.ResolveTCPAddr("tcp", cfg.Host)
-	if err != nil {
-		return nil, errors.Wrap(err, "resolving tcp")
+	//tcpAddr, err := net.ResolveTCPAddr("tcp", cfg.Host)
+	//if err != nil {
+	//	return nil, errors.Wrap(err, "resolving tcp")
+	//}
+	d := net.Dialer{
+		Timeout:   15 * time.Second,
+		KeepAlive: 15 * time.Second,
 	}
-	conn, err := net.DialTCP("tcp", nil, tcpAddr)
+	u,err:=url.Parse("socks5://127.0.0.1:7890")
+	if err!=nil {
+		return nil, err
+	}
+	dialer, err :=proxy.FromURL(u,&d)
+	if err!=nil {
+		return nil, err
+	}
+	conn, err :=dialer.Dial("tcp",cfg.Host)
+	//conn, err := net.DialTCP("tcp", nil, tcpAddr)
 	if err != nil {
 		return nil, errors.Wrap(err, "dialing tcp")
 	}
 
 	return &tcpConn{
 		cancelReader: ioutil.NewCancelableReader(cfg.Ctx, conn),
-		conn:         conn,
+		conn:         conn.(*net.TCPConn),
 		timeout:      cfg.Timeout,
 	}, nil
 }

@@ -12,7 +12,7 @@ import (
 	"reflect"
 	"sync"
 	"time"
-
+	//"fmt"
 	"github.com/k0kubun/pp"
 	"github.com/pkg/errors"
 	"github.com/xelaj/errs"
@@ -53,6 +53,7 @@ type MTProto struct {
 	// идентификаторы сообщений, нужны что бы посылать и принимать сообщения.
 	seqNoMutex sync.Mutex
 	seqNo      int32
+	msgId	   int64
 
 	// айдишники DC для КОНКРЕТНОГО Приложения и клиента. Может меняться, но фиксирована для
 	// связки приложение+клиент
@@ -88,6 +89,22 @@ type Config struct {
 
 	ServerHost string
 	PublicKey  *rsa.PublicKey
+}
+
+func (m *MTProto) ReCreate() (*MTProto) {
+	m2 := &MTProto{
+		tokensStorage:         m.tokensStorage,
+		addr:                  m.addr,
+		encrypted:             false, // if not nil, then it's already encrypted, otherwise makes no sense
+		sessionId:             utils.GenerateSessionID(),
+		serviceChannel:        make(chan tl.Object),
+		publicKey:             m.publicKey,
+		responseChannels:      utils.NewSyncIntObjectChan(),
+		expectedTypes:         utils.NewSyncIntReflectTypes(),
+		serverRequestHandlers: make([]customHandlerFunc, 0),
+		dclist:                defaultDCList(),
+	}
+	return m2
 }
 
 func NewMTProto(c Config) (*MTProto, error) {
@@ -138,7 +155,6 @@ func (m *MTProto) SetDCList(in map[int]string) {
 func (m *MTProto) CreateConnection() error {
 	ctx, cancelfunc := context.WithCancel(context.Background())
 	m.stopRoutines = cancelfunc
-
 	err := m.connect(ctx)
 	if err != nil {
 		return err
@@ -184,6 +200,7 @@ func (m *MTProto) connect(ctx context.Context) error {
 
 func (m *MTProto) makeRequest(data tl.Object, expectedTypes ...reflect.Type) (any, error) {
 	resp, err := m.sendPacket(data, expectedTypes...)
+	//fmt.Printf("m seqNo:%d MSgid:%d\n",m.seqNo,m.msgId)
 	if err != nil {
 		return nil, errors.Wrap(err, "sending message")
 	}
@@ -193,7 +210,7 @@ func (m *MTProto) makeRequest(data tl.Object, expectedTypes ...reflect.Type) (an
 	switch r := response.(type) {
 	case *objects.RpcError:
 		realErr := RpcErrorToNative(r)
-
+		//fmt.Println(r.ErrorMessage)
 		err = m.tryToProcessErr(realErr.(*ErrResponseCode))
 		if err != nil {
 			return nil, err
@@ -309,7 +326,7 @@ func (m *MTProto) readMsg() error {
 		m.serviceChannel <- obj
 		return nil
 	}
-
+	//fmt.Println(response.GetSeqNo())
 	err = m.processResponse(response)
 	if err != nil {
 		return errors.Wrap(err, "processing response")
@@ -419,9 +436,24 @@ func (m *MTProto) tryToProcessErr(e *ErrResponseCode) error {
 			return errors.Wrapf(e, "DC with id %v not found", e.AdditionalInfo)
 		}
 
+
 		m.addr = newIP
-		err := m.Reconnect()
-		return err
+		m.SaveSession()
+		return errors.Wrapf(e,"PHONE_MIGRATE_X_NewIP is %s",newIP)
+
+		err := m.Disconnect()
+		if err != nil {
+			return errors.Wrap(err, "disconnecting")
+		}
+		//m.routineswg.Wait()
+		//m.encrypted = false
+		//m.seqNo = 0
+		//m.serviceModeActivated = false
+
+		*m = *m.ReCreate()
+
+		err = m.CreateConnection()
+		return errors.Wrap(err, "recreating connection")
 
 	default:
 		return e

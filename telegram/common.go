@@ -8,13 +8,14 @@ package telegram
 import (
 	"reflect"
 	"runtime"
-
 	"github.com/pkg/errors"
 	"github.com/xelaj/errs"
 	dry "github.com/xelaj/go-dry"
 
 	"github.com/xelaj/mtproto"
 	"github.com/xelaj/mtproto/internal/keys"
+	"strings"
+	"strconv"
 )
 
 type Client struct {
@@ -118,9 +119,14 @@ func NewClient(c ClientConfig) (*Client, error) { //nolint: gocritic arg is not 
 		if dc.Cdn {
 			continue
 		}
-
-		dcList[int(dc.ID)] = dc.IpAddress
+		if strings.Contains(dc.IpAddress,":"){
+			//不允许IPV6的地址段
+			continue
+		}
+		dcList[int(dc.ID)] = dc.IpAddress + ":" + strconv.Itoa(int(dc.Port))
+		//dcList[int(dc.ID)] = "149.154.167.50:443"
 	}
+
 	client.SetDCList(dcList)
 	return client, nil
 }
