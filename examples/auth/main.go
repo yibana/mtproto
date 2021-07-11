@@ -21,11 +21,8 @@ const AppID = 4995960
 const AppHash = "ca928547b9035ac7a4219a4441883f64"
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("second argument must be phone number!")
-		os.Exit(1)
-	}
-	phoneNumber := os.Args[1]
+
+	phoneNumber := "+77474357863"
 
 	// helper variables
 	appStorage := utils.PrepareAppStorageForExamples()
@@ -43,7 +40,7 @@ func main() {
 		AppID:           AppID,                              // app id, could be find at https://my.telegram.org
 		AppHash:         AppHash, // app hash, could be find at https://my.telegram.org
 		InitWarnChannel: true,                               // if we want to get errors, otherwise, client.Warnings will be set nil
-		ProxyUrl: "socks5://127.0.0.1:7890",
+		ProxyUrl: "socks5://xiaotianwm_1011:xiaotian@gate5.rola-ip.co:2137",
 	})
 	dry.PanicIfErr(err)
 	client.Warnings = make(chan error) // required to initialize, if we want to get errors
