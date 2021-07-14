@@ -6,10 +6,12 @@
 package mtproto
 
 import (
-	"reflect"
-	"strconv"
+	"fmt"
 	"github.com/pkg/errors"
 	"github.com/xelaj/errs"
+	"reflect"
+	"strconv"
+	"time"
 
 	"github.com/xelaj/mtproto/internal/encoding/tl"
 	"github.com/xelaj/mtproto/internal/mtproto/messages"
@@ -38,7 +40,11 @@ func (m *MTProto) sendPacket(request tl.Object, expectedTypes ...reflect.Type) (
 	if isNullableResponse(request) {
 		go func() { resp <- &objects.Null{} }() // goroutine cuz we don't read from it RIGHT NOW
 	} else {
+		//fmt.Println("getRespChannel m.mutex.Lock()")
+		//m.mutex.Lock()
 		m.responseChannels.Add(int(msgID), resp)
+		//m.mutex.Unlock()
+		//fmt.Println("getRespChannel m.mutex.Unlock()")
 	}
 
 	if m.encrypted {
@@ -58,7 +64,9 @@ func (m *MTProto) sendPacket(request tl.Object, expectedTypes ...reflect.Type) (
 	m.seqNoMutex.Lock()
 	defer m.seqNoMutex.Unlock()
 
+	//fmt.Println("WriteMsg start")
 	err = m.transport.WriteMsg(data, MessageRequireToAck(request))
+	//fmt.Println("WriteMsg end")
 	if err != nil {
 		return nil, errors.Wrap(err, "sending request")
 	}
@@ -74,12 +82,25 @@ func (m *MTProto) sendPacket(request tl.Object, expectedTypes ...reflect.Type) (
 }
 
 func (m *MTProto) writeRPCResponse(msgID int, data tl.Object) error {
+	//fmt.Println("writeRPCResponse m.mutex.Lock()")
+	//m.mutex.Lock()
+	//defer func() {
+	//	m.mutex.Unlock()
+	//	//fmt.Println("writeRPCResponse m.mutex.Unlock()")
+	//}()
 	v, ok := m.responseChannels.Get(msgID)
+
 	if !ok {
 		return errs.NotFound("msgID", strconv.Itoa(msgID))
 	}
 
-	v <- data
+	select {
+		case v <- data:
+			break
+		case <-time.After(1 * time.Second):
+			fmt.Println("writeRPCResponse timeout")
+			break
+	}
 
 	m.responseChannels.Delete(msgID)
 	m.expectedTypes.Delete(msgID)

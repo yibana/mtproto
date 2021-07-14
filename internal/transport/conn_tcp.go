@@ -57,6 +57,10 @@ func NewTCP(cfg TCPConnConfig) (Conn, error) {
 		return nil, errors.Wrap(err, "dialing tcp")
 	}
 
+	if conn==nil{
+		return nil, errors.Wrap(err,"conn fail")
+	}
+
 	return &tcpConn{
 		cancelReader: ioutil.NewCancelableReader(cfg.Ctx, conn),
 		conn:         conn.(*net.TCPConn),

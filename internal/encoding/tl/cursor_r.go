@@ -169,6 +169,10 @@ func (d *Decoder) DumpWithoutRead() ([]byte, error) {
 }
 
 func (d *Decoder) PopVector(as reflect.Type) any {
+	switch as.String() {
+	case "*objects.FutureSalt":
+		return d.popVector(as, true)
+	}
 	return d.popVector(as, false)
 }
 

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 	//"fmt"
@@ -33,6 +34,7 @@ type MTProto struct {
 	transport    transport.Transport
 	stopRoutines context.CancelFunc // stopping ping, read, etc. routines
 	routineswg   sync.WaitGroup     // WaitGroup for being sure that all routines are stopped
+	Reconnecting	bool
 
 	// ключ авторизации. изменять можно только через setAuthKey
 	authKey []byte
@@ -147,7 +149,7 @@ func (m *MTProto) CreateConnection() error {
 	if err != nil {
 		return err
 	}
-
+	fmt.Println("链接服务器成功!")
 	// start reading responses from the server
 	m.startReadingResponses(ctx)
 
@@ -169,7 +171,7 @@ const defaultTimeout = 65 * time.Second // 60 seconds is maximum timeouts withou
 
 func (m *MTProto) connect(ctx context.Context) error {
 	var err error
-	m.transport, err = transport.NewTransport(
+	transport, err := transport.NewTransport(
 		m,
 		transport.TCPConnConfig{
 			Ctx:     ctx,
@@ -182,6 +184,7 @@ func (m *MTProto) connect(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrap(err, "can't connect")
 	}
+	m.transport = transport
 
 	CloseOnCancel(ctx, m.transport)
 	return nil
@@ -191,28 +194,43 @@ func (m *MTProto) makeRequest(data tl.Object, expectedTypes ...reflect.Type) (an
 	resp, err := m.sendPacket(data, expectedTypes...)
 	//fmt.Printf("m seqNo:%d MSgid:%d\n",m.seqNo,m.msgId)
 	if err != nil {
+		if strings.Contains(err.Error(),"use of closed network connection") {
+			// 如果链接断开
+			go func() {
+				m.Reconnect()
+			}()
+		}
 		return nil, errors.Wrap(err, "sending message")
 	}
 
-	response := <-resp
+	//等待服务器返回数据,设置一个超时
+	select {
+	case response := <-resp: //拿到锁
+		switch r := response.(type) {
+		case *objects.RpcError:
+			realErr := RpcErrorToNative(r)
+			//fmt.Println(r.ErrorMessage)
+			err = m.tryToProcessErr(realErr.(*ErrResponseCode))
+			if err != nil {
+				return nil, err
+			}
 
-	switch r := response.(type) {
-	case *objects.RpcError:
-		realErr := RpcErrorToNative(r)
-		//fmt.Println(r.ErrorMessage)
-		err = m.tryToProcessErr(realErr.(*ErrResponseCode))
-		if err != nil {
-			return nil, err
+			return m.makeRequest(data, expectedTypes...)
+
+		case *errorSessionConfigsChanged:
+			fmt.Println("errorSessionConfigsChanged")
+			return m.makeRequest(data, expectedTypes...)
+		case *BadMsgError:
+			return nil, errors.New("Reconnect")
+
 		}
 
-		return m.makeRequest(data, expectedTypes...)
-
-	case *errorSessionConfigsChanged:
-		return m.makeRequest(data, expectedTypes...)
-
+		return tl.UnwrapNativeTypes(response), nil
+	case <-time.After(60 * time.Second): //超时60s
+		return nil, errors.New("makeRequest timeout")
 	}
 
-	return tl.UnwrapNativeTypes(response), nil
+	return nil, nil
 }
 
 // Disconnect is closing current TCP connection and stopping all routines like pinging, reading etc.
@@ -226,10 +244,28 @@ func (m *MTProto) Disconnect() error {
 }
 
 func (m *MTProto) Reconnect() error {
+	if m.Reconnecting{
+		return nil
+	}
+	m.Reconnecting = true
+	defer func() {
+		m.Reconnecting = false
+	}()
 	err := m.Disconnect()
 	if err != nil {
 		return errors.Wrap(err, "disconnecting")
 	}
+	//fmt.Println("Reconnect m.mutex.Lock()")
+	//m.mutex.Lock()
+	//for _, k := range m.responseChannels.Keys() {
+	//	v, _ := m.responseChannels.Get(k)
+	//	if cap(v)==0{
+	//		v <- &BadMsgError{}
+	//	}
+	//	//m.responseChannels.Delete(k)
+	//}
+	//m.mutex.Unlock()
+	//fmt.Println("Reconnect m.mutex.Unlock()")
 	m.routineswg.Wait()
 	err = m.CreateConnection()
 	return errors.Wrap(err, "recreating connection")
@@ -242,18 +278,30 @@ func (m *MTProto) startPinging(ctx context.Context) {
 
 	go func() {
 		ticker := time.NewTicker(time.Minute)
+		fmt.Println("ping start")
 		defer ticker.Stop()
 		defer m.routineswg.Done()
-
+		defer func() {
+			fmt.Println("startPinging is exit!")
+		}()
 		for {
 			select {
 			case <-ctx.Done():
-				fmt.Println("startPinging is exit!")
 				return
 			case <-ticker.C:
-				_, err := m.ping(0xCADACADA) //nolint:gomnd not magic
+				//_, err := m.ping(0xCADACADA) //nolint:gomnd not magic
+				_,err:=m.ping_delay_disconnect(time.Now().UnixNano(),75)//保持链接
 				if err != nil {
-					m.warnError(errors.Wrap(err, "ping unsuccsesful"))
+					fmt.Println("ping unsuccsesful")
+					go func() {
+						err = m.Reconnect()
+						if err != nil {
+							m.warnError(errors.Wrap(err, "can't reconnect"))
+						}
+					}()
+					return
+				}else {
+					fmt.Println("ping succsesful")
 				}
 			}
 		}
@@ -264,11 +312,13 @@ func (m *MTProto) startReadingResponses(ctx context.Context) {
 	m.routineswg.Add(1)
 	go func() {
 		defer m.routineswg.Done()
-
+		defer func() {
+			fmt.Println("startReadingResponses is exit!")
+		}()
+		fmt.Println("startReadingResponses start")
 		for {
 			select {
 			case <-ctx.Done():
-				fmt.Println("startReadingResponses is exit!")
 				return
 			default:
 				err := m.readMsg()
@@ -277,11 +327,33 @@ func (m *MTProto) startReadingResponses(ctx context.Context) {
 				case context.Canceled:
 					return
 				case io.EOF:
-					err = m.Reconnect()
-					if err != nil {
-						m.warnError(errors.Wrap(err, "can't reconnect"))
-					}
+					fmt.Println("ioEOF")
+					go func() {
+						err = m.Reconnect()
+						if err != nil {
+							m.warnError(errors.Wrap(err, "can't reconnect"))
+						}
+					}()
+					return
 				default:
+					if strings.Contains(err.Error(),"i/o timeout"){
+						fmt.Println(err.Error())
+						go func() {
+							err = m.Reconnect()
+							if err != nil {
+								m.warnError(errors.Wrap(err, "can't reconnect"))
+							}
+						}()
+						return
+						//err = m.Reconnect()
+						//if err != nil {
+						//	m.warnError(errors.Wrap(err, "can't reconnect"))
+						//}else {
+						//	fmt.Println("timeout重新链接成功")
+						//	continue
+						//}
+
+					}
 					check(err)
 				}
 			}
@@ -294,7 +366,9 @@ func (m *MTProto) readMsg() error {
 		return errors.New("must setup connection before reading messages")
 	}
 
+	//fmt.Println("m.transport.ReadMsg() start")
 	response, err := m.transport.ReadMsg()
+	//fmt.Println("m.transport.ReadMsg() end")
 	if err != nil {
 		if e, ok := err.(transport.ErrCode); ok {
 			return &ErrResponseCode{Code: int(e)}
@@ -318,7 +392,9 @@ func (m *MTProto) readMsg() error {
 		return nil
 	}
 	//fmt.Println(response.GetSeqNo())
+	//fmt.Println("processResponse start")
 	err = m.processResponse(response)
+	//fmt.Println("processResponse end")
 	if err != nil {
 		return errors.Wrap(err, "processing response")
 	}
@@ -352,22 +428,30 @@ messageTypeSwitching:
 		err := m.SaveSession()
 		check(err)
 
-		m.mutex.Lock()
-		for _, k := range m.responseChannels.Keys() {
-			v, _ := m.responseChannels.Get(k)
-			v <- &errorSessionConfigsChanged{}
-		}
-		m.mutex.Unlock()
+		//fmt.Println("BadServerSalt m.mutex.Lock()")
+		//m.mutex.Lock()
+		//for _, k := range m.responseChannels.Keys() {
+		//	v, _ := m.responseChannels.Get(k)
+		//	v <- &errorSessionConfigsChanged{}
+		//}
+		//m.mutex.Unlock()
+		//fmt.Println("BadServerSalt m.mutex.Unlock()")
 
 	case *objects.NewSessionCreated:
 		m.serverSalt = message.ServerSalt
 		err := m.SaveSession()
+		fmt.Println("objects.NewSessionCreated")
 		if err != nil {
 			m.warnError(errors.Wrap(err, "saving session"))
 		}
 
-	case *objects.Pong, *objects.MsgsAck:
+	case *objects.Pong:
 		// игнорим, пришло и пришло, че бубнить то
+		m.writeRPCResponse(int(message.MsgID), message)
+		fmt.Println("PingID",message.PingID)
+
+	case  *objects.MsgsAck:
+		fmt.Println("objects.MsgsAck")
 
 	case *objects.BadMsgNotification:
 		pp.Println(message)
@@ -446,6 +530,8 @@ func (m *MTProto) tryToProcessErr(e *ErrResponseCode) error {
 			return errors.Wrap(err, "recreating connection")
 		}
 		return errors.New("PHONE_MIGRATE_X_NewIP") // 返回一个重定向错误
+	case "FILE_MIGRATE_X":
+		return e
 	default:
 		return e
 	}

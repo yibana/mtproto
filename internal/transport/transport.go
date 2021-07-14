@@ -29,7 +29,6 @@ func NewTransport(m messages.MessageInformator, conn ConnConfig, modeVariant mod
 	t := &transport{
 		m: m,
 	}
-
 	var err error
 	switch cfg := conn.(type) {
 	case TCPConnConfig:

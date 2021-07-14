@@ -53,6 +53,9 @@ func main() {
 
 	if signedIn {
 		println("You've already signed in!")
+	}else {
+		println("singedOUT!!!")
+		os.Exit(0)
 	}
 	client.AddCustomServerRequestHandler(func(i interface{}) bool {
 		pp.Println(i)
@@ -63,7 +66,14 @@ func main() {
 		}
 		return false
 	})
-
+	go func() {
+		for{
+			//fmt.Println("MessagesGetDialogs start")
+			TGPrintlResult(client.MessagesGetDialogs(&telegram.MessagesGetDialogsParams{OffsetPeer: telegram.InputPeer(&telegram.InputPeerEmpty{})}))
+			//fmt.Println("MessagesGetDialogs end")
+			time.Sleep(time.Minute)
+		}
+	}()
 	defaulPeer :=telegram.InputPeer(&telegram.InputPeerUser{UserID: 962210352,AccessHash: -1498843611134224383})//dreamzza
 	for{
 		choise :=rawinput("选择操作")
@@ -73,7 +83,10 @@ func main() {
 
 			//搜索群组
 			resolved, err := client.ContactsResolveUsername(hash)
-			dry.PanicIfErr(err)
+			if err != nil {
+				fmt.Println(err.Error())
+				continue
+			}
 
 			channel := resolved.Chats[0].(*telegram.Channel)
 			fmt.Println(channel.ID)
@@ -102,7 +115,10 @@ func main() {
 					100,
 					0,
 				)
-				dry.PanicIfErr(err)
+				if err != nil {
+					fmt.Println(err.Error())
+					continue
+				}
 				data := resp.(*telegram.ChannelsChannelParticipantsObj)
 				totalCount = int(data.Count)
 				for _, participant := range data.Participants {
@@ -128,18 +144,30 @@ func main() {
 			//tg://login?token=AQKFwOlgB5GdexZlvoUd7FcvAXgn_MPrwLWmV4i6nj224Q
 			tokens := rawinput("token")
 			token,err:=base64.RawURLEncoding.DecodeString(tokens)
-			dry.PanicIfErr(err)
+			if err != nil {
+				fmt.Println(err.Error())
+				continue
+			}
 			auth,err:=client.AuthAcceptLoginToken(token)
-			dry.PanicIfErr(err)
+			if err != nil {
+				fmt.Println(err.Error())
+				continue
+			}
 			pp.Println(auth)
 		case "获取频道消息":
 			msgs,err:=client.MessagesGetAllChats([]int32{})
-			dry.PanicIfErr(err)
+			if err != nil {
+				fmt.Println(err.Error())
+				continue
+			}
 			fmt.Println(msgs)
 		case "获取指定聊天记录":
 			username :=rawinput("username")
 			cont,err:=client.ContactsResolveUsername(username)
-			dry.PanicIfErr(err)
+			if err != nil {
+				fmt.Println(err.Error())
+				continue
+			}
 			fmt.Println(cont)
 			tgUserobj :=cont.Users[0].(*telegram.UserObj)
 			TGPrintlResult(client.MessagesGetCommonChats(telegram.InputUser(&telegram.InputUserObj{UserID: tgUserobj.ID,AccessHash: tgUserobj.AccessHash}),100,100))
@@ -147,15 +175,58 @@ func main() {
 			TGPrintlResult(client.MessagesGetDialogs(&telegram.MessagesGetDialogsParams{OffsetPeer: telegram.InputPeer(&telegram.InputPeerEmpty{})}))
 		case "查看指定对话框":
 			TGPrintlResult(client.MessagesGetPeerDialogs([]telegram.InputDialogPeer{telegram.InputDialogPeer(&telegram.InputDialogPeerObj{Peer: defaulPeer})}))
-			// 标记已读
-			client.MessagesReadHistory(defaulPeer,16)
+
+			client.MessagesReadHistory(defaulPeer,16)// 标记已读
 		case "发送文本消息":
-			TGPrintlResult(client.MessagesSendMessage(&telegram.MessagesSendMessageParams{Peer: defaulPeer,
-				Message: "你好啊!",RandomID: time.Now().UnixNano()}))
+			username:=rawinput("username")
+			cont,err:=client.ContactsResolveUsername(username)
+			if err != nil {
+				fmt.Println(err.Error())
+				continue
+			}
+			if len(cont.Users)>0{
+				sendContent:=rawinput("发送内容")
+				tgUserobj :=cont.Users[0].(*telegram.UserObj)
+				TGPrintlResult(client.MessagesSendMessage(&telegram.MessagesSendMessageParams{Peer: telegram.InputPeer(&telegram.InputPeerUser{UserID: tgUserobj.ID,AccessHash: tgUserobj.AccessHash}),
+					Message: sendContent,RandomID: time.Now().UnixNano()}))
+			}else {
+				sendContent:=rawinput("发送内容")
+				tgUserobj :=cont.Chats[0].(*telegram.Channel)
+				TGPrintlResult(client.MessagesSendMessage(&telegram.MessagesSendMessageParams{Peer: telegram.InputPeer(&telegram.InputPeerChannel{ChannelID: tgUserobj.ID,AccessHash: tgUserobj.AccessHash}),
+					Message: sendContent,RandomID: time.Now().UnixNano()}))
+
+			}
+		case "查看群对话框":
+			hash := "hao123fuck"
+			//搜索群组
+			resolved, err := client.ContactsResolveUsername(hash)
+			if err != nil {
+				fmt.Println(err.Error())
+				continue
+			}
+
+			channel := resolved.Chats[0].(*telegram.Channel)
+			TGPrintlResult(client.MessagesGetPeerDialogs([]telegram.InputDialogPeer{telegram.InputDialogPeer(&telegram.InputDialogPeerObj{Peer: &telegram.InputPeerChannel{ChannelID: channel.ID,AccessHash: channel.AccessHash}})}))
+		case "获取历史消息":
+			hash := "txtdx"
+			//搜索群组
+			resolved, err := client.ContactsResolveUsername(hash)
+			if err != nil {
+				fmt.Println(err.Error())
+				continue
+			}
+
+			channel := resolved.Chats[0].(*telegram.Channel)
+			fmt.Println(channel)
+			TGPrintlResult(client.MessagesGetHistory(&telegram.MessagesGetHistoryParams{Peer: getChannelPeer(channel),Limit: 10,Hash: 0}))
+
 		case "发送带链接消息":
 			username :="dreamzza"
 			cont,err:=client.ContactsResolveUsername(username)
-			dry.PanicIfErr(err)
+			if err != nil {
+				fmt.Println(err.Error())
+				continue
+			}
 			tgUserobj :=cont.Users[0].(*telegram.UserObj)
 			ScheduleDate:=int32(time.Now().Unix()+30)
 
@@ -163,31 +234,34 @@ func main() {
 				Message: "你好啊!看看?这是一条定时消息,不包含网页预览,点击你好啊可以打开网页",RandomID: time.Now().UnixNano(),Entities: []telegram.MessageEntity{telegram.MessageEntity(&telegram.MessageEntityTextURL{0,4,"https://baidu.com"})},
 			ScheduleDate: ScheduleDate}))
 
-			case "上传资源":
-				img,err:=ioutil.ReadFile(`C:\Users\Administrator\Pictures\1.jpg`)
-				//Md5Checksum := getMd5String(img)
+		case "上传资源":
+			img,err:=ioutil.ReadFile(`C:\Users\Administrator\Pictures\1.jpg`)
+			//Md5Checksum := getMd5String(img)
+			dry.PanicIfErr(err)
+			fileid:=time.Now().UnixNano()
+			filep:=0
+			for filep = 0; filep < len(img)/524288; filep++ {
+				updata:=img[:524288]
+				upb,err:=client.UploadSaveFilePart(fileid, int32(filep),updata)
 				dry.PanicIfErr(err)
-				fileid:=time.Now().UnixNano()
-				filep:=0
-				for filep = 0; filep < len(img)/524288; filep++ {
-					updata:=img[:524288]
-					upb,err:=client.UploadSaveFilePart(fileid, int32(filep),updata)
-					dry.PanicIfErr(err)
-					fmt.Println(upb)
-					img = img[524288:]
-				}
-				if len(img)>0{
-					upb,err:=client.UploadSaveFilePart(fileid, int32(filep),img)
-					dry.PanicIfErr(err)
-					fmt.Println(upb)
-					filep++
-				}
+				fmt.Println(upb)
+				img = img[524288:]
+			}
+			if len(img)>0{
+				upb,err:=client.UploadSaveFilePart(fileid, int32(filep),img)
+				dry.PanicIfErr(err)
+				fmt.Println(upb)
+				filep++
+			}
 
-				TGPrintlResult(client.MessagesUploadMedia(defaulPeer,telegram.InputMedia(&telegram.InputMediaUploadedPhoto{File: telegram.InputFile(&telegram.InputFileObj{ID: fileid,Parts: int32(filep),Name: "美女哦.jpg"})})))
+			TGPrintlResult(client.MessagesUploadMedia(defaulPeer,telegram.InputMedia(&telegram.InputMediaUploadedPhoto{File: telegram.InputFile(&telegram.InputFileObj{ID: fileid,Parts: int32(filep),Name: "美女哦.jpg"})})))
 		case "发送图片":
 			username :="zzkkccy"
 			cont,err:=client.ContactsResolveUsername(username)
-			dry.PanicIfErr(err)
+			if err != nil {
+				fmt.Println(err.Error())
+				continue
+			}
 			tgUserobj :=cont.Users[0].(*telegram.UserObj)
 			FileReference,_:=base64.RawStdEncoding.DecodeString("AGDqLz3gew+k8RfJVyLz+eL9T3tV")
 			TGPrintlResult(client.MessagesSendMedia(&telegram.MessagesSendMediaParams{Peer: telegram.InputPeer(&telegram.InputPeerUser{UserID: tgUserobj.ID,AccessHash: tgUserobj.AccessHash}),
@@ -215,11 +289,61 @@ func main() {
 				filep++
 			}
 			TGPrintlResult(client.PhotosUploadProfilePhoto(telegram.InputFile(&telegram.InputFileObj{ID: fileid,Parts: int32(filep)}),nil,0))
+		case "下载文件":
+			// 此处涉及授权转移https://core.telegram.org/api/datacenter 暂时不搞
+			//FileReference,_:=base64.RawStdEncoding.DecodeString("AGDrUhNLOir11oi21zpuTm+YyvJP")
+			TGPrintlResult(client.UploadGetFile(&telegram.UploadGetFileParams{Location: telegram.InputFileLocation(&telegram.InputDocumentFileLocation{ID: 6296397664816726796,AccessHash: 1177560048428552522,ThumbSize: "",FileReference: []uint8{
+				0x01, 0x00, 0x00, 0x00, 0x22, 0x60, 0xeb, 0x56, 0xc0, 0x8e, 0x83, 0x73, 0x96, 0x2f, 0x44, 0x69,
+				0x7e, 0x41, 0x23, 0xbb, 0x82, 0xcf, 0x31, 0x2b, 0x6e,
+			}}),Offset: 0,Limit: 524288}))
+		case "进入频道":
+			hash := "hao123fuck"
+			//搜索群组
+			resolved, err := client.ContactsResolveUsername(hash)
+			if err != nil {
+				fmt.Println(err.Error())
+				continue
+			}
 
-
+			channel := resolved.Chats[0].(*telegram.Channel)
+			fmt.Println(channel.ID)
+			inCh := telegram.InputChannel(&telegram.InputChannelObj{
+				ChannelID:  channel.ID,
+				AccessHash: channel.AccessHash,
+			})
+			TGPrintlResult(client.ChannelsJoinChannel(inCh))
+		case "重新链接":
+			err:=client.Reconnect()
+			if err != nil {
+				fmt.Println(err.Error())
+				continue
+			}else {
+				fmt.Println("重新链接成功")
+			}
+		case "上线状态":
+			TGPrintlResult(client.AccountUpdateStatus(false))
+		case "离线状态":
+			TGPrintlResult(client.AccountUpdateStatus(true))
+		case "模拟输入":
+			client.MessagesSetTyping(defaulPeer,0,telegram.SendMessageAction(&telegram.SendMessageTypingAction{}))
+			time.Sleep(time.Second*2)
+			client.MessagesSetTyping(defaulPeer,0,telegram.SendMessageAction(&telegram.SendMessageCancelAction{}))
+			client.MessagesSetTyping(defaulPeer,0,telegram.SendMessageAction(&telegram.SendMessageGamePlayAction{}))
+			time.Sleep(time.Second*2)
+			client.MessagesSetTyping(defaulPeer,0,telegram.SendMessageAction(&telegram.SendMessageCancelAction{}))
+			client.MessagesSetTyping(defaulPeer,0,telegram.SendMessageAction(&telegram.SendMessageRecordAudioAction{}))
+			time.Sleep(time.Second*2)
+			client.MessagesSetTyping(defaulPeer,0,telegram.SendMessageAction(&telegram.SendMessageCancelAction{}))
+			client.MessagesSetTyping(defaulPeer,0,telegram.SendMessageAction(&telegram.SendMessageUploadAudioAction{}))
+			time.Sleep(time.Second*2)
+			client.MessagesSetTyping(defaulPeer,0,telegram.SendMessageAction(&telegram.SendMessageCancelAction{}))
+			client.MessagesSetTyping(defaulPeer,0,telegram.SendMessageAction(&telegram.SendMessageGeoLocationAction{}))
+			time.Sleep(time.Second*2)
+			client.MessagesSetTyping(defaulPeer,0,telegram.SendMessageAction(&telegram.SendMessageCancelAction{}))
+		case "获取服务器salts":
+			TGPrintlResult(client.GetFutureSalts(32))
 		}
 	}
-
 	var wg sync.WaitGroup
 	wg.Add(1)
 	wg.Wait()
@@ -233,12 +357,25 @@ func rawinput(title string) string {
 }
 
 func TGPrintlResult(data interface{},err error) string {
-	dry.PanicIfErr(err)
+	if err != nil {
+		fmt.Println(err.Error())
+		return ""
+	}
 	s,err:=json.Marshal(data)
-	dry.PanicIfErr(err)
+	if err != nil {
+		fmt.Println(err.Error())
+		return ""
+	}
 	fmt.Println(string(s))
 	return string(s)
 }
 func getMd5String(b []byte) string {
 	return fmt.Sprintf("%X", md5.Sum(b))
+}
+
+func getUserPeer(obj *telegram.UserObj) telegram.InputPeer {
+	return telegram.InputPeer(&telegram.InputPeerUser{UserID: obj.ID,AccessHash: obj.AccessHash})
+}
+func getChannelPeer(obj *telegram.Channel) telegram.InputPeer {
+	return telegram.InputPeer(&telegram.InputPeerChannel{ChannelID: obj.ID,AccessHash: obj.AccessHash})
 }

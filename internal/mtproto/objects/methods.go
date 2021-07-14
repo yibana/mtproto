@@ -107,8 +107,60 @@ func SetClientDHParams(m requester, nonce, serverNonce *tl.Int128, encryptedData
 // rpc_drop_answer
 // get_future_salts
 
+type GetFutureSaltsParams struct {
+	Num int32
+}
+
+
 type PingParams struct {
 	PingID int64
+}
+
+// ping_delay_disconnect
+type Ping_Delay_DisconnectParams struct {
+	PingID int64
+	DisconnectDelay int32
+}
+
+func (*GetFutureSaltsParams) CRC() uint32 {
+	return 0xb921bd04
+}
+
+func (*Ping_Delay_DisconnectParams) CRC() uint32 {
+	return 0xf3427b8c
+}
+
+func GetFutureSalts(m requester, num int32) (*FutureSalts, error) {
+	data, err := m.MakeRequest(&GetFutureSaltsParams{
+		num,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "sending GetFutureSalts")
+	}
+
+	resp, ok := data.(*FutureSalts)
+	if !ok {
+		return nil, errors.New("got invalid response type: " + reflect.TypeOf(data).String())
+	}
+
+	return resp, nil
+}
+
+func Ping_Delay_Disconnect(m requester, pingID int64,disconnect_delay int32) (*Pong, error) {
+	data, err := m.MakeRequest(&Ping_Delay_DisconnectParams{
+		PingID: pingID,
+		DisconnectDelay: disconnect_delay,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "sending Ping_Delay_Disconnect")
+	}
+
+	resp, ok := data.(*Pong)
+	if !ok {
+		return nil, errors.New("got invalid response type: " + reflect.TypeOf(data).String())
+	}
+
+	return resp, nil
 }
 
 func (*PingParams) CRC() uint32 {
@@ -131,7 +183,6 @@ func Ping(m requester, pingID int64) (*Pong, error) {
 	return resp, nil
 }
 
-// ping_delay_disconnect
 // destroy_session
 // http_wait
 

@@ -29,3 +29,11 @@ func (m *MTProto) setClientDHParams(nonce, serverNonce *tl.Int128, encryptedData
 func (m *MTProto) ping(pingID int64) (*objects.Pong, error) {
 	return objects.Ping(m, pingID)
 }
+
+func (m *MTProto) ping_delay_disconnect(pingID int64,disconnect_delay int32) (*objects.Pong, error) {
+	return objects.Ping_Delay_Disconnect(m, pingID,disconnect_delay)
+}
+
+func (m *MTProto) GetFutureSalts(num int32) (*objects.FutureSalts, error) {
+	return objects.GetFutureSalts(m, num)
+}

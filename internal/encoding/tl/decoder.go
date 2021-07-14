@@ -262,6 +262,9 @@ func (d *Decoder) decodeValueGeneral(value reflect.Value) any {
 	case reflect.Float32, reflect.Complex64, reflect.Complex128:
 		d.err = fmt.Errorf("float kind: %s (must be converted to float64 explicitly)", value.Kind())
 		return nil
+	case reflect.Ptr:
+		//val = d.decodeValueGeneral(value)
+		return nil
 
 	default:
 		// not basic type
