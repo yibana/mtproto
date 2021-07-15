@@ -23,6 +23,7 @@ type TCPConnConfig struct {
 	Host    string
 	Timeout time.Duration
 	ProxyUrl string
+	Conn *net.Conn
 }
 
 func NewTCP(cfg TCPConnConfig) (Conn, error) {
@@ -44,12 +45,17 @@ func NewTCP(cfg TCPConnConfig) (Conn, error) {
 			return nil, err
 		}
 		conn, err =dialer.Dial("tcp",cfg.Host)
+		if err != nil {
+			return nil, errors.Wrap(err, "dialing tcp")
+		}
+		cfg.Conn = &conn
 	} else {
 		tcpAddr, err := net.ResolveTCPAddr("tcp", cfg.Host)
 		if err != nil {
 			return nil, errors.Wrap(err, "resolving tcp")
 		}
 		conn, err = net.DialTCP("tcp", nil, tcpAddr)
+		cfg.Conn = &conn
 	}
 
 	//
@@ -79,7 +85,9 @@ func (t *tcpConn) Write(b []byte) (int, error) {
 func (t *tcpConn) Read(b []byte) (int, error) {
 	if t.timeout > 0 {
 		err := t.conn.SetReadDeadline(time.Now().Add(t.timeout))
-		check(err)
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	n, err := t.cancelReader.Read(b)

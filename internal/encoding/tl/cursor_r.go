@@ -13,6 +13,7 @@ import (
 	"io/ioutil"
 	"math"
 	"reflect"
+	"strings"
 
 	"github.com/pkg/errors"
 )
@@ -169,11 +170,41 @@ func (d *Decoder) DumpWithoutRead() ([]byte, error) {
 }
 
 func (d *Decoder) PopVector(as reflect.Type) any {
-	switch as.String() {
-	case "*objects.FutureSalt":
-		return d.popVector(as, true)
+	if strings.Contains(as.String(),"objects.FutureSalt"){
+		fmt.Println("objects.FutureSaltObj")
+		return d.popVectorSalt(as)
 	}
 	return d.popVector(as, false)
+}
+
+func (d *Decoder) popVectorSalt(as reflect.Type) any {
+	if d.err != nil {
+		return nil
+	}
+
+	size := d.PopUint()
+	if d.err != nil {
+		d.err = errors.Wrap(d.err, "read vector size")
+		return nil
+	}
+
+	x := reflect.MakeSlice(reflect.SliceOf(as), int(size), int(size))
+	for i := 0; i < int(size); i++ {
+		var val reflect.Value
+		if as.Kind() == reflect.Ptr {
+			val = reflect.New(as.Elem())
+		} else {
+			val = reflect.New(as)
+		}
+		d.decodeObject(val.Interface().(Object),true)
+		if d.err != nil {
+			return nil
+		}
+
+		x.Index(i).Set(val)
+	}
+
+	return x.Interface()
 }
 
 func (d *Decoder) popVector(as reflect.Type, ignoreCRC bool) any {

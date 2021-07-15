@@ -9,6 +9,7 @@ import (
 	"github.com/k0kubun/pp"
 	"github.com/pkg/errors"
 	"github.com/xelaj/go-dry"
+	"github.com/xelaj/mtproto"
 	"github.com/xelaj/mtproto/telegram"
 	"io/ioutil"
 	"os"
@@ -24,7 +25,7 @@ const AppHash = "ca928547b9035ac7a4219a4441883f64"
 
 func main() {
 	println("firstly, you need to authorize. after example 'auth', you will sign in")
-	phoneNumber:="+77474357863"
+	phoneNumber:="+12029720239"
 	// helper variables
 	appStorage := utils.PrepareAppStorageForExamples()
 	sessionFile := filepath.Join(appStorage, fmt.Sprintf("%s_Session.json",strings.ReplaceAll(phoneNumber,"+","")))
@@ -41,9 +42,10 @@ func main() {
 		AppID:           AppID,                              // app id, could be find at https://my.telegram.org
 		AppHash:         AppHash, // app hash, could be find at https://my.telegram.org
 		InitWarnChannel: true,                               // if we want to get errors, otherwise, client.Warnings will be set nil
-		ProxyUrl: "socks5://xiaotianwm_1011:xiaotian@gate5.rola-ip.co:2137",
+		ProxyUrl: "socks5://xiaotianwmm_5050:xiaotian@gate5.rola-ip.co:2054",
 	})
 	dry.PanicIfErr(err)
+	defer client.Close()
 	client.Warnings = make(chan error) // required to initialize, if we want to get errors
 	utils.ReadWarningsToStdErr(client.Warnings)
 	signedIn, err := client.IsSessionRegistred()
@@ -53,9 +55,17 @@ func main() {
 
 	if signedIn {
 		println("You've already signed in!")
+		go func() {
+			for{
+				//fmt.Println("MessagesGetDialogs start")
+				TGPrintlResult(client.MessagesGetDialogs(&telegram.MessagesGetDialogsParams{OffsetPeer: telegram.InputPeer(&telegram.InputPeerEmpty{})}))
+				//fmt.Println("MessagesGetDialogs end")
+				time.Sleep(time.Minute)
+			}
+		}()
 	}else {
 		println("singedOUT!!!")
-		os.Exit(0)
+		//os.Exit(0)
 	}
 	client.AddCustomServerRequestHandler(func(i interface{}) bool {
 		pp.Println(i)
@@ -66,14 +76,7 @@ func main() {
 		}
 		return false
 	})
-	go func() {
-		for{
-			//fmt.Println("MessagesGetDialogs start")
-			TGPrintlResult(client.MessagesGetDialogs(&telegram.MessagesGetDialogsParams{OffsetPeer: telegram.InputPeer(&telegram.InputPeerEmpty{})}))
-			//fmt.Println("MessagesGetDialogs end")
-			time.Sleep(time.Minute)
-		}
-	}()
+
 	defaulPeer :=telegram.InputPeer(&telegram.InputPeerUser{UserID: 962210352,AccessHash: -1498843611134224383})//dreamzza
 	for{
 		choise :=rawinput("选择操作")
@@ -342,6 +345,74 @@ func main() {
 			client.MessagesSetTyping(defaulPeer,0,telegram.SendMessageAction(&telegram.SendMessageCancelAction{}))
 		case "获取服务器salts":
 			TGPrintlResult(client.GetFutureSalts(32))
+		case "注册":
+			setCode, err := client.AuthSendCode(
+				phoneNumber, AppID, AppHash, &telegram.CodeSettings{},
+			)
+
+			if err != nil {
+				if strings.Contains(err.Error(),"PHONE_MIGRATE_X_NewIP"){
+					// 重定向错误,更新客户端配置
+					err = client.RefreshServerConfig()
+					if err != nil {
+						panic(err)
+					}
+					setCode, err = client.AuthSendCode(
+						phoneNumber, AppID, AppHash, &telegram.CodeSettings{},
+					)
+				}
+			}
+
+			// this part shows how to deal with errors (if you want of course. No one
+			// like errors, but the can be return sometimes)
+			if err != nil {
+				errResponse := &mtproto.ErrResponseCode{}
+				if !errors.As(err, &errResponse) {
+					// some strange error, looks like a bug actually
+					pp.Println(err)
+					panic(err)
+				} else {
+					if errResponse.Message == "AUTH_RESTART" {
+						println("Oh crap! You accidentally restart authorization process!")
+						println("You should login only once, if you'll spam 'AuthSendCode' method, you can be")
+						println("timeouted to loooooooong long time. You warned.")
+					} else if errResponse.Message == "FLOOD_WAIT_X" {
+						println("No way... You've reached flood timeout! Did i warn you? Yes, i am. That's what")
+						println("happens, when you don't listen to me...")
+						println()
+						timeoutDuration := time.Second * time.Duration(errResponse.AdditionalInfo.(int))
+
+						println("Repeat after " + timeoutDuration.String())
+					} else {
+						println("Oh crap! Got strange error:")
+						pp.Println(errResponse)
+					}
+
+					os.Exit(1)
+				}
+			}
+
+			fmt.Print("Auth code: ")
+			code, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+			code = strings.ReplaceAll(code, "\n", "")
+
+			auth, err := client.AuthSignIn(
+				phoneNumber,
+				setCode.PhoneCodeHash,
+				code,
+			)
+			if err == nil {
+				pp.Println(auth)
+				auth2, _ := client.AuthSignUp(
+					phoneNumber,
+					setCode.PhoneCodeHash,
+					"张",
+					"小生",
+				)
+				pp.Println(auth2)
+				fmt.Println("Success! You've signed in!")
+				return
+			}
 		}
 	}
 	var wg sync.WaitGroup

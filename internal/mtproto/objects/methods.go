@@ -130,7 +130,7 @@ func (*Ping_Delay_DisconnectParams) CRC() uint32 {
 	return 0xf3427b8c
 }
 
-func GetFutureSalts(m requester, num int32) (*FutureSalts, error) {
+func GetFutureSalts(m requester, num int32) (FutureSalts, error) {
 	data, err := m.MakeRequest(&GetFutureSaltsParams{
 		num,
 	})
@@ -138,7 +138,7 @@ func GetFutureSalts(m requester, num int32) (*FutureSalts, error) {
 		return nil, errors.Wrap(err, "sending GetFutureSalts")
 	}
 
-	resp, ok := data.(*FutureSalts)
+	resp, ok := data.(FutureSalts)
 	if !ok {
 		return nil, errors.New("got invalid response type: " + reflect.TypeOf(data).String())
 	}
@@ -189,7 +189,7 @@ func Ping(m requester, pingID int64) (*Pong, error) {
 // set_client_DH_params#f5045f1f nonce:int128 server_nonce:int128 encrypted_data:bytes = Set_client_DH_params_answer;
 
 // rpc_drop_answer#58e4a740 req_msg_id:long = RpcDropAnswer;
-// get_future_salts#b921bd04 num:int = FutureSalts;
+// get_future_salts#b921bd04 num:int = FutureSaltsObj;
 // ping_delay_disconnect#f3427b8c ping_id:long disconnect_delay:int = Pong;
 // destroy_session#e7512126 session_id:long = DestroySessionRes;
 

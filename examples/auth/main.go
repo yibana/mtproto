@@ -22,7 +22,7 @@ const AppHash = "ca928547b9035ac7a4219a4441883f64"
 
 func main() {
 
-	phoneNumber := "+77474357863"
+	phoneNumber := "+51968338062"
 
 	// helper variables
 	appStorage := utils.PrepareAppStorageForExamples()

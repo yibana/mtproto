@@ -33,6 +33,7 @@ func NewTransport(m messages.MessageInformator, conn ConnConfig, modeVariant mod
 	switch cfg := conn.(type) {
 	case TCPConnConfig:
 		t.conn, err = NewTCP(cfg)
+
 	default:
 		return nil, fmt.Errorf("unsupported connection type %v", reflect.TypeOf(conn).String())
 	}

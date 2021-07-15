@@ -19,7 +19,7 @@ import (
 	"github.com/xelaj/mtproto/internal/utils"
 )
 
-func (m *MTProto) sendPacket(request tl.Object, expectedTypes ...reflect.Type) (chan tl.Object, error) {
+func (m *MTProto) sendPacket(request tl.Object,conID int64, expectedTypes ...reflect.Type) (chan tl.Object, error) {
 	msg, err := tl.Marshal(request)
 	if err != nil {
 		return nil, errors.Wrap(err, "encoding request message")
@@ -65,12 +65,14 @@ func (m *MTProto) sendPacket(request tl.Object, expectedTypes ...reflect.Type) (
 	defer m.seqNoMutex.Unlock()
 
 	//fmt.Println("WriteMsg start")
-	err = m.transport.WriteMsg(data, MessageRequireToAck(request))
+	//m.routineswg.Add(1)
+	err = (*m.transport[conID]).WriteMsg(data, MessageRequireToAck(request))
+	//m.routineswg.Done()
 	//fmt.Println("WriteMsg end")
 	if err != nil {
 		return nil, errors.Wrap(err, "sending request")
 	}
-
+	m.DebugPrintf("发送消息:%d 类型:%s 连接ID:%d\n",msgID,reflect.TypeOf(request).Elem().Name(),conID)
 	if m.encrypted {
 		// since we sending this message, we are incrementing the seqno BUT ONLY when we
 		// are sending an encrypted message. why? I don’t know. But the fact remains:

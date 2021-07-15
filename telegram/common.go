@@ -83,11 +83,14 @@ func NewClient(c ClientConfig) (*Client, error) { //nolint: gocritic arg is not 
 	if c.InitWarnChannel {
 		m.Warnings = make(chan error, warnChannelDefaultCapacity)
 	}
+	//m.Ctx, m.Cancelfunc = context.WithCancel(context.Background())
+	//m.StartReadingResponses(m.Ctx)
 
 	err = m.CreateConnection()
 	if err != nil {
 		return nil, errors.Wrap(err, "creating connection")
 	}
+	//m.StartPinging(m.Ctx)
 
 	client := &Client{
 		MTProto: m,

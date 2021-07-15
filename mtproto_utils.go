@@ -42,14 +42,14 @@ func (m *MTProto) SetAuthKey(key []byte) {
 }
 
 func (m *MTProto) MakeRequest(msg tl.Object) (any, error) {
-	return m.makeRequest(msg)
+	return m.makeRequest(msg,m.ConnId)
 }
 
 func (m *MTProto) MakeRequestWithHintToDecoder(msg tl.Object, expectedTypes ...reflect.Type) (any, error) {
 	if len(expectedTypes) == 0 {
 		return nil, errors.New("expected a few hints. If you don't need it, use m.MakeRequest")
 	}
-	return m.makeRequest(msg, expectedTypes...)
+	return m.makeRequest(msg,m.ConnId, expectedTypes...)
 }
 
 func (m *MTProto) AddCustomServerRequestHandler(handler customHandlerFunc) {
